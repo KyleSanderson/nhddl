@@ -192,7 +192,7 @@ void uiDrawPrompt(GSGLOBAL *gs, int centerVX, int iconRowVY, int textRowVY, int 
 }
 
 // Draw texture in virtual rect; ratio-preserving and centered. If tex is NULL or empty, draws solid rect.
-void uiDrawTextureInVirtualRect(GSGLOBAL *gs, int vx, int vy, int vw, int vh, GSTEXTURE *tex, int z, uint64_t color) {
+void uiDrawTextureInVirtualRect(GSGLOBAL *gs, int vx, int vy, int vw, int vh, GSTEXTURE *tex, int z, uint64_t color, int disableAlphaTest) {
   int slotX1 = scaleScaleX(vx) + scaleGetOffsetX();
   int slotY1 = scaleScaleY(vy) + scaleGetOffsetY();
   int slotX2 = scaleScaleX(vx + vw) + scaleGetOffsetX();
@@ -203,12 +203,16 @@ void uiDrawTextureInVirtualRect(GSGLOBAL *gs, int vx, int vy, int vw, int vh, GS
   int destH = (int)((float)vh * scaleYR + 0.5f);
   int drawX = (slotX1 + slotX2 - destW) / 2;
   int drawY = (slotY1 + slotY2 - destH) / 2;
+  if (disableAlphaTest)
+    gs->PrimAlphaEnable = GS_SETTING_OFF;
   if (tex && tex->Width > 0 && tex->Height > 0) {
     gsKit_prim_sprite_texture(gs, tex, (float)drawX, (float)drawY, 0.0f, 0.0f, (float)(drawX + destW), (float)(drawY + destH), (float)tex->Width,
                               (float)tex->Height, z, color);
   } else {
     uiDrawRectNative(gs, drawX, drawY, drawX + destW, drawY + destH, z, color);
   }
+  if (disableAlphaTest)
+    gs->PrimAlphaEnable = GS_SETTING_ON;
 }
 
 // Same ratio-preserving slot and centering as cover art; draws a filled rect (e.g. for border around cover).

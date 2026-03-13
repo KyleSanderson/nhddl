@@ -31,7 +31,7 @@ void uiDrawIconScaled(GSGLOBAL *gs, int vx, int vy, int vw, int vh, int z, uint6
 void uiDrawPrompt(GSGLOBAL *gs, int centerVX, int iconRowVY, int textRowVY, int z, uint64_t color, IconType iconType, const char *label);
 
 // Draw texture in virtual rect [vx,vy] size (vw,vh). Ratio-preserving scale, centered. If tex is NULL or has no size, draws solid rect (placeholder).
-void uiDrawTextureInVirtualRect(GSGLOBAL *gs, int vx, int vy, int vw, int vh, GSTEXTURE *tex, int z, uint64_t color);
+void uiDrawTextureInVirtualRect(GSGLOBAL *gs, int vx, int vy, int vw, int vh, GSTEXTURE *tex, int z, uint64_t color, int disableAlphaTest);
 
 // Draw a filled rect in virtual (vx,vy,vw,vh) with ratio-preserving scale and centered (same as cover art). Use for borders around ratio-preserving content.
 void uiDrawRectRatioPreserving(GSGLOBAL *gs, int vx, int vy, int vw, int vh, int z, uint64_t color);
