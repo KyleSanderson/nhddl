@@ -27,7 +27,7 @@ int loadPNGFromFile(GSGLOBAL *gs, GSTEXTURE *texture, char *path);
 int loadPNGFromMemory(GSGLOBAL *gs, GSTEXTURE *texture, void *buf, size_t size);
 
 // Initializes icon textures from embedded PNGs. Returns 0 on success.
-int initIconsOnly(GSGLOBAL *gs);
+int initIcons(GSGLOBAL *gs);
 
 // Draws icon at screen position (x,y) with size (w,h). No-op if icon not loaded.
 void drawIconAt(GSGLOBAL *gs, float x, float y, float w, float h, int z, uint64_t color, IconType iconType);

@@ -17,10 +17,25 @@ set(SOURCES
     src/dprintf.c
     src/forwarder.c
 
-    # UI
-    # src/ui/gui.c
-    # src/ui/graphics.c
-    # src/ui/args.c
+    # Main UI code
+    src/ui/ui_main.c
+    src/ui/view.c
+    src/ui/title_list.c
+    src/ui/atlas.c
+    src/ui/font.c
+    src/ui/scale.c
+    src/ui/png.c
+    src/ui/draw.c
+    src/ui/icons.c
+
+    # Scenes (one per file under ui/views)
+    src/ui/views/exit_modal.c
+    src/ui/views/splash_scene.c
+    src/ui/views/osd_overlay.c
+    src/ui/views/main_scene.c
+    src/ui/views/menu_scene.c
+    src/ui/views/title_options_scene.c
+    src/ui/views/view_options_popup.c
 
     # Neutrino support
     src/neutrino/argv.c
@@ -78,7 +93,6 @@ if(USE_EESIO)
     add_definitions(-DUSE_EESIO)
 endif()
 
-
 # Create the main executable
 add_executable(${EE_BIN} ${SOURCES})
 
@@ -86,6 +100,7 @@ add_executable(${EE_BIN} ${SOURCES})
 target_include_directories(${EE_BIN}
     PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    $ENV{PS2SDK}/ports/include/freetype2
 )
 
 # Custom linker script
@@ -98,7 +113,7 @@ target_link_options(${EE_BIN}
 )
 
 # Link libraries
-target_link_libraries(${EE_BIN}
+set(EE_LIBS
     pad
     patches
     fileXio
@@ -109,12 +124,14 @@ target_link_libraries(${EE_BIN}
     png
     z
     tiff
+    freetype
 )
+target_link_libraries(${EE_BIN} ${EE_LIBS})
 
-# Set link flags for PS2
-set_target_properties(${EE_BIN} PROPERTIES
-    LINK_FLAGS "-s"
-)
+# # Set link flags for PS2
+# set_target_properties(${EE_BIN} PROPERTIES
+#     LINK_FLAGS "-s"
+# )
 
 # Create packed binary
 add_custom_command(

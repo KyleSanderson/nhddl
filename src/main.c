@@ -23,10 +23,7 @@
 // Always reboots IOP. Returns 0 on success.
 int resolveRootDevice(char *argv0);
 
-void uiMain() {
-  displayFatalError("main: UI not yet implemented\n");
-  __builtin_trap();
-}
+extern void uiMain(void);
 
 int main(int argc, char *argv[]) {
   DPRINTF("*************\nNHDDL %s\nA Neutrino launcher by pcm720\n*************\n", GIT_VERSION);
@@ -59,6 +56,9 @@ int main(int argc, char *argv[]) {
 
   DPRINTF("main: starting UI\n");
   uiMain();
+  cleanupRootMount();
+  cleanupAllBackends();
+  return 0;
 
 fail:
   cleanupRootMount();
@@ -86,12 +86,12 @@ int resolveRootDevice(char *argv0) {
   }
   *(++temp) = '\0';
 
-  if (!strncmp(cwd, "host", 4)) {
-    DPRINTF("main: using host path\n");
-    // For host: paths, just set the root path and return
-    setNHDDLRoot(cwd);
-    return 0;
-  }
+  // if (!strncmp(cwd, "host", 4)) {
+  //   DPRINTF("main: using host path\n");
+  //   // For host: paths, just set the root path and return
+  //   setNHDDLRoot(cwd);
+  //   return 0;
+  // }
 
   DeviceType device = guessDeviceType(cwd);
   if (device == Device_None) {

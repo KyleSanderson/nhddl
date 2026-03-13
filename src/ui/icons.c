@@ -35,10 +35,14 @@ static void freeIcon(GSTEXTURE *t) {
     free(t->Mem);
     t->Mem = NULL;
   }
+  if (t->Clut) {
+    free(t->Clut);
+    t->Clut = NULL;
+  }
   free(t);
 }
 
-int initIconsOnly(GSGLOBAL *gs) {
+int initIcons(GSGLOBAL *gs) {
   for (int i = 0; i < ICON_COUNT; i++) {
     if (iconTextures[i]) {
       freeIcon(iconTextures[i]);

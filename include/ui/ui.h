@@ -1,7 +1,7 @@
 #ifndef _UI_H_
 #define _UI_H_
 
-#include "target.h"
+#include "backends/target.h"
 
 int uiInit();
 int uiLoop(TargetList *titles);

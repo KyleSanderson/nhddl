@@ -1,10 +1,11 @@
-#include "common.h"
+#include "backends/cache.h"
+#include "config/neutrino_args.h"
+#include "devices/pad.h"
 #include "dprintf.h"
-#include "neutrino.h"
+#include "neutrino/neutrino.h"
 #include "options.h"
 #include "ui/args.h"
-#include "ui/graphics.h"
-#include "devices/pad.h"
+#include "ui/icons.h"
 #include "ui/ui.h"
 #include <dmaKit.h>
 #include <gsKit.h>
@@ -15,8 +16,21 @@
 #include <ps2sdkapi.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #define DIV_ROUND(n, d) (n + (d - 1)) / d
+
+// Syncs one argument from merged list to title list (for persistence on save).
+static void syncArgumentToTitle(ArgumentList *merged, ArgumentList *title, const char *arg_name) {
+  Argument *a = getArgument(merged, arg_name);
+  if (!a)
+    return;
+  Argument *t = getArgument(title, arg_name);
+  if (t)
+    replaceArgument(t, a);
+  else
+    appendArgumentCopy(title, a);
+}
 
 // Assuming 140x200 cover art
 #define COVER_ART_RES_W 140
@@ -25,7 +39,7 @@
 void closeUI();
 int uiLoop(TargetList *titles);
 int uiTitleOptionsLoop(Target *title);
-int uiArgumentListLoop(Target *target, ArgumentList *titleArguments);
+int uiArgumentListLoop(Target *target, ArgumentList *mergedArguments, ArgumentList *titleArguments);
 void drawTitleList(TargetList *titles, int selectedTitleIdx, int maxTitlesPerPage, GSTEXTURE *selectedTitleCover);
 void uiLaunchTitle(Target *target, ArgumentList *arguments);
 void drawGameID(const char *game_id);
@@ -136,7 +150,7 @@ int uiInit() {
 }
 
 // Invalidates currently loaded texture and loads a new one
-int loadCoverArt(struct DeviceMapEntry *device, char *titleID) {
+int loadCoverArt(struct BackendDevice *device, char *titleID) {
   if (device->metadev) { // Fallback to metadata device
     device = device->metadev;
   }
@@ -182,29 +196,6 @@ int uiLoop(TargetList *titles) {
   int selectedTitleIdx = 0;
   int maxTitlesPerPage = (gsGlobal->Height - (headerHeight + footerHeight)) / getFontLineHeight();
   Target *curTarget = titles->first;
-
-  // Get last launched title and find it in the target list
-  char *lastTitle = calloc(sizeof(char), PATH_MAX + 1);
-  if (!getLastLaunchedTitle(lastTitle)) {
-    int mountpointLen;
-    while (curTarget != NULL) {
-      // Compare paths without the mountpoint
-      mountpointLen = getRelativePathIdx(curTarget->fullPath);
-      if (mountpointLen == -1)
-        mountpointLen = 0;
-
-      if (!strcmp(lastTitle, &curTarget->fullPath[mountpointLen])) {
-        selectedTitleIdx = curTarget->idx;
-        break;
-      }
-      curTarget = curTarget->next;
-    }
-    // Reinitialize target if last launched title couldn't be loaded
-    if (curTarget == NULL) {
-      curTarget = titles->first;
-    }
-  }
-  free(lastTitle);
 
   // Load cover art
   isCoverUninitialized = loadCoverArt(curTarget->device, curTarget->id);
@@ -349,7 +340,7 @@ void drawTitleList(TargetList *titles, int selectedTitleIdx, int maxTitlesPerPag
       drawTextWindow(coverArtX1,
                      drawTextWindow(coverArtX1, coverArtY2 + 5, coverArtX2, 0, 0, FontMainColor, ALIGN_HCENTER,
                                     curTitle->id), // Use y coordinate return by title ID drawing function as an argument
-                     coverArtX2, 0, 0, FontMainColor, ALIGN_HCENTER, modeToString(curTitle->device->mode));
+                     coverArtX2, 0, 0, FontMainColor, ALIGN_HCENTER, getDeviceString(curTitle->device->type));
     }
 
     // Draw title name
@@ -411,14 +402,22 @@ void drawTitleOptionsFooter(int baseX) {
 int uiTitleOptionsLoop(Target *target) {
   int res = 0;
 
-  // Load arguments from config files
-  ArgumentList *titleArguments = loadLaunchArgumentLists(target);
+  ArgumentList *globalArguments = calloc(sizeof(ArgumentList), 1);
+  ArgumentList *titleArguments = calloc(sizeof(ArgumentList), 1);
+  loadGlobalNeutrinoArguments(globalArguments, target->device);
+  loadTitleNeutrinoArguments(titleArguments, target);
+  ArgumentList *mergedArguments = mergeNeutrinoArguments(globalArguments, titleArguments);
+  if (!mergedArguments) {
+    freeArgumentList(globalArguments);
+    freeArgumentList(titleArguments);
+    return -1;
+  }
+
   int input = 0;
   int activeArgumentIdx = 0;
 
-  // Parse arguments
   for (int i = 0; i < (uiArgumentsTotal); i++)
-    uiArguments[i].parse(&uiArguments[i], titleArguments);
+    uiArguments[i].parse(&uiArguments[i], mergedArguments);
 
   int baseX = keepoutArea + 10;
   int i = 0;
@@ -442,32 +441,28 @@ int uiTitleOptionsLoop(Target *target) {
     gsKit_finish();
     gsKit_sync_flip(gsGlobal);
 
-    // Process user inputs
     input = waitForInput(-1);
     if (input & (PAD_L1 | PAD_R1)) {
-      // Show full argument list
-      if ((res = uiArgumentListLoop(target, titleArguments)))
+      if ((res = uiArgumentListLoop(target, mergedArguments, titleArguments)))
         goto exit;
 
-      // Re-parse arguments
       activeArgumentIdx = 0;
       for (i = 0; i < uiArgumentsTotal; i++)
-        uiArguments[i].parse(&uiArguments[i], titleArguments);
+        uiArguments[i].parse(&uiArguments[i], mergedArguments);
     } else if (input & PAD_SQUARE) {
-      // Launch title without saving arguments
-      uiLaunchTitle(target, titleArguments);
-      res = -1; // If this was somehow reached, something went terribly wrong
+      uiLaunchTitle(target, mergedArguments);
+      res = -1;
       goto exit;
     } else if (input & PAD_START) {
-      updateTitleLaunchArguments(target, titleArguments);
+      saveTitleNeutrinoArguments(target, titleArguments);
       goto exit;
     } else if (input & PAD_TRIANGLE) {
-      // Quit to title list
       goto exit;
     } else {
       switch (uiArguments[activeArgumentIdx].handleInput(&uiArguments[activeArgumentIdx], input)) {
       case ACTION_CHANGED:
-        uiArguments[activeArgumentIdx].marshal(&uiArguments[activeArgumentIdx], titleArguments);
+        uiArguments[activeArgumentIdx].marshal(&uiArguments[activeArgumentIdx], mergedArguments);
+        syncArgumentToTitle(mergedArguments, titleArguments, uiArguments[activeArgumentIdx].arg);
         break;
       case ACTION_NEXT_ARGUMENT:
         if (activeArgumentIdx < uiArgumentsTotal - 1)
@@ -482,17 +477,19 @@ int uiTitleOptionsLoop(Target *target) {
     }
   }
 exit:
+  freeArgumentList(globalArguments);
   freeArgumentList(titleArguments);
+  freeArgumentList(mergedArguments);
   return res;
 }
 
 // Handles all arguments in arugment list
 // Returns -1 if error occurs, 1 if parent needs to exit to title list
-int uiArgumentListLoop(Target *target, ArgumentList *titleArguments) {
+int uiArgumentListLoop(Target *target, ArgumentList *mergedArguments, ArgumentList *titleArguments) {
   int selectedArgIdx = 0;
   int input = 0;
 
-  Argument *curArgument = titleArguments->first;
+  Argument *curArgument = mergedArguments->first;
   while (1) {
     gsKit_clear(gsGlobal, BGColor);
     int baseX = keepoutArea + 10;
@@ -508,31 +505,27 @@ int uiArgumentListLoop(Target *target, ArgumentList *titleArguments) {
     int startY = headerHeight + 2.5 * getFontLineHeight();
     int idx = 0;
 
-    // Set number of elements per page according to line height and available screen height
     int maxArguments = (gsGlobal->Height - startY - footerHeight - getFontLineHeight() / 2) / getFontLineHeight();
     int curPage = selectedArgIdx / maxArguments;
 
-    snprintf(lineBuffer, 255, "Page %d/%d", curPage + 1, (!titleArguments->total) ? 1 : DIV_ROUND(titleArguments->total, maxArguments));
+    snprintf(lineBuffer, 255, "Page %d/%d", curPage + 1, (!mergedArguments->total) ? 1 : DIV_ROUND(mergedArguments->total, maxArguments));
     startY = drawTextWindow(baseX, startY - getFontLineHeight(), gsGlobal->Width - baseX, 0, 0, HeaderTextColor, ALIGN_RIGHT, lineBuffer);
 
-    Argument *argument = titleArguments->first;
+    Argument *argument = mergedArguments->first;
     while (argument != NULL) {
-      // Do not display arguments before the current page
       if (idx < maxArguments * curPage) {
         idx++;
         goto next;
       }
-      // Do not display arguments beyond the current page
       if (idx >= maxArguments * (curPage + 1)) {
         break;
       }
 
-      // Draw argument
       if (!argument->isDisabled)
         drawIconWindow(baseX, startY, 20, startY + getFontLineHeight(), 0, FontMainColor, ALIGN_CENTER, ICON_ENABLED);
 
-      snprintf(lineBuffer, 255, "%s%s%s %s", ((argument->isGlobal) ? "[G] " : ""), argument->arg, (!strlen(argument->value)) ? "" : ":",
-               argument->value);
+      snprintf(lineBuffer, 255, "%s%s%s %s", argument->arg, (argument->value && argument->value[0]) ? ": " : "",
+               argument->value ? argument->value : "");
       startY = drawText(baseX + getIconWidth(ICON_ENABLED), startY, 0, 0, 0, ((selectedArgIdx == idx) ? ColorSelected : FontMainColor), lineBuffer);
 
       idx++;
@@ -544,54 +537,54 @@ int uiArgumentListLoop(Target *target, ArgumentList *titleArguments) {
     gsKit_finish();
     gsKit_sync_flip(gsGlobal);
 
-    // Process user inputs
     input = waitForInput(-1);
     if (input & (PAD_L1 | PAD_R1)) {
       return 0;
     } else if (input & PAD_SQUARE) {
-      // Launch title without saving arguments
-      uiLaunchTitle(target, titleArguments);
-      return -1; // If this was somehow reached, something went terribly wrong
+      uiLaunchTitle(target, mergedArguments);
+      return -1;
     } else if (input & PAD_START) {
-      updateTitleLaunchArguments(target, titleArguments);
+      saveTitleNeutrinoArguments(target, titleArguments);
       return 1;
     } else if (input & PAD_TRIANGLE) {
       return 1;
     }
 
-    // Ignore inputs when the argument is not initialized
     if (!curArgument)
       continue;
 
     if (input & (PAD_CROSS | PAD_CIRCLE)) {
-      // Toggle argument
       curArgument->isDisabled = !curArgument->isDisabled;
-      // If the argument was disabled, reset global flag
-      if (curArgument->isDisabled)
-        curArgument->isGlobal = 0;
+      syncArgumentToTitle(mergedArguments, titleArguments, curArgument->arg);
     } else if (input & PAD_UP) {
-      // Point to the previous argument
-      selectedArgIdx = (selectedArgIdx - 1 + titleArguments->total) % titleArguments->total;
-      curArgument = (curArgument->prev) ? curArgument->prev : titleArguments->last;
+      selectedArgIdx = (selectedArgIdx - 1 + mergedArguments->total) % mergedArguments->total;
+      curArgument = (curArgument->prev) ? curArgument->prev : mergedArguments->last;
     } else if (input & PAD_DOWN) {
-      // Advance to the next argument
-      selectedArgIdx = (selectedArgIdx + 1) % titleArguments->total;
-      curArgument = (curArgument->next) ? curArgument->next : titleArguments->first;
+      selectedArgIdx = (selectedArgIdx + 1) % mergedArguments->total;
+      curArgument = (curArgument->next) ? curArgument->next : mergedArguments->first;
     }
   }
 }
 
 // Displays Game ID and launches the title
 void uiLaunchTitle(Target *target, ArgumentList *arguments) {
-  // Initialize arugments if not set
   if (arguments == NULL) {
-    arguments = loadLaunchArgumentLists(target);
+    ArgumentList *globalArguments = calloc(sizeof(ArgumentList), 1);
+    ArgumentList *titleArguments = calloc(sizeof(ArgumentList), 1);
+    loadGlobalNeutrinoArguments(globalArguments, target->device);
+    loadTitleNeutrinoArguments(titleArguments, target);
+    arguments = mergeNeutrinoArguments(globalArguments, titleArguments);
+    freeArgumentList(globalArguments);
+    freeArgumentList(titleArguments);
   }
 
   gsKit_clear(gsGlobal, BGColor);
 
   // Draw screen with GameID and title parameters
-  snprintf(lineBuffer, 255, "Launching\n%s\n%s\n\n%s", target->name, target->id, target->fullPath);
+  char fullPathBuf[PATH_MAX];
+  if (getTargetFullPath(target, fullPathBuf, sizeof(fullPathBuf)))
+    fullPathBuf[0] = '\0';
+  snprintf(lineBuffer, 255, "Launching\n%s\n%s\n\n%s", target->name, target->id, fullPathBuf);
   drawTextWindow(0, 0, gsGlobal->Width, gsGlobal->Height, 0, FontMainColor, ALIGN_CENTER, lineBuffer);
   drawGameID(target->id);
 

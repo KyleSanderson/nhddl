@@ -1,7 +1,7 @@
 // Implements support for known Neutrino arguments
 #include "ui/args.h"
 #include "options.h"
-#include "ui/graphics.h"
+#include "ui/icons.h"
 #include <libpad.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -142,11 +142,7 @@ void gcMarshal(NeutrinoArgument *arg, ArgumentList *list) {
   }
   larg->value[pos] = '\0';
 
-  // Remove global flag only if value has changed and has value
   if (prevValue) {
-    if (strcmp(prevValue, larg->value) && pos)
-      larg->isGlobal = 0;
-
     free(prevValue);
   }
 
@@ -336,11 +332,7 @@ void gsmMarshal(NeutrinoArgument *arg, ArgumentList *list) {
     snprintf(larg->value, 10, "%s%s", vmArg, cmArg);
   }
 
-  // Remove global flag only if value has changed and has value
   if (prevValue) {
-    if (strcmp(prevValue, larg->value))
-      larg->isGlobal = 0;
-
     free(prevValue);
   }
 
@@ -455,7 +447,6 @@ void toggleMarshal(NeutrinoArgument *arg, ArgumentList *list) {
     larg = insertArgument(list, arg->arg, "");
   }
 
-  larg->isGlobal = 0;
   if (arg->state) {
     larg->isDisabled = 0;
     return;
