@@ -41,7 +41,7 @@ BIN2C = $(PS2SDK)/bin/bin2c
 all: $(EE_BIN_PKD)
 
 $(EE_BIN_PKD): $(EE_BIN)
-	ps2-packer $< $@
+	ps2-packer-lite $< $@ > /dev/null
 
 clean:
 	$(MAKE) -C loader clean

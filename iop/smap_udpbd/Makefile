@@ -13,3 +13,4 @@ clean::
 
 include $(PS2SDK)/samples/Makefile.pref
 include $(PS2SDK)/samples/Makefile.iopglobal
+IOP_SRXFIXUP_FLAGS += --allow-zero-text
