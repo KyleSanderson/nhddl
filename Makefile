@@ -40,8 +40,12 @@ BIN2C = $(PS2SDK)/bin/bin2c
 
 all: $(EE_BIN_PKD)
 
+# Use ps2-packer-lite if available, otherwise fall back to ps2-packer.
+_PACKER_LITE := $(shell command -v ps2-packer-lite 2>/dev/null)
+EE_BIN_PACKER ?= $(if $(_PACKER_LITE),ps2-packer-lite,ps2-packer)
+
 $(EE_BIN_PKD): $(EE_BIN)
-	ps2-packer-lite $< $@ > /dev/null
+	$(EE_BIN_PACKER) $< $@ > /dev/null
 
 clean:
 	$(MAKE) -C loader clean
